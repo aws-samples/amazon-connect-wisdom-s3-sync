@@ -1,0 +1,990 @@
+# © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.  
+# This AWS Content is provided subject to the terms of the AWS Customer Agreement available at  
+# http://aws.amazon.com/agreement or other written agreement between Customer and either
+# Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
+# Version Info: 2023.10.04.final
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+    Amazon Connect Wisdom - S3 Sync Template. Version: 2023.10.04.final
+    This CloudFormation Template will create all of the resources required to deploy Amazon Connect Wisdom using Amazon S3 as a Knowledge Base. On stack deletion, only the new resources created by this template (excluding Amazon S3 bucket) will be removed.
+    This template features two core components: 1) Amazon Connect Wisdom Integration, 2) Amazon Connect Wisdom S3 Sync
+
+Parameters:
+  AmazonConnectInstanceARN:
+    Type: String
+    Description: Enter your Amazon Connect Instance ARN - https://docs.aws.amazon.com/connect/latest/adminguide/find-instance-arn.html
+    Default: arn:aws:connect:REGION:ACCOUNTID:instance/INSTANCEID
+
+  WisdomS3BucketName:
+    Type: String
+    Description: Provide a valid, globally unique name for the S3 Bucket where you would like to store Knowledge Base content. (ex. s3-wisdom-content-123)
+    AllowedPattern: '(?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)'
+    ConstraintDescription: 'Invalid S3 Bucket name'
+
+Outputs:
+  ##################################################### 
+  # Part 1: Wisdom Integration - Outputs
+  ##################################################### 
+  WisdomAssistantARN:
+    Description: "Wisdom Assistant ARN"
+    Value: !GetAtt WisdomAssistant.AssistantArn
+
+  WisdomKnowledgeBaseARN:
+    Description: "Wisdom KnowledgeBase ARN"
+    Value:  !GetAtt WisdomKnowledgeBase.KnowledgeBaseArn
+
+  WisdomAssistantKnowledgeBaseAssociationARN:
+    Description: "Wisdom Assistant<->KnowledgeBase Association ARN"
+    Value: !GetAtt WisdomAssistantAssociation.AssistantAssociationArn
+
+  ConnectAssistantIntegrationAssociationARN:
+    Description: "Amazon Connect - Wisdom Assistant - Integration Association ARN"
+    Value:  !GetAtt InvokeConnectWisdomIntegration.Connect_WisdomAssistant_IntegrationAssociationARN
+    
+  WisdomKnowledgeBaseIntegrationAssociationARN:
+    Description: "Amazon Connect - Wisdom Knowledgebase - Integration Association ARN"
+    Value:  !GetAtt InvokeConnectWisdomIntegration.Connect_WisdomKnowledgeBase_IntegrationAssociationARN
+  
+  # Connect-Wisdom Integration Lambda Function
+  ConnectWisdomIntegrationHandler:
+    Description: "Wisdom Constructs Lambda Function Name"
+    Value: !Ref ConnectWisdomIntegration
+  
+  ConnectWisdomIntegrationHandlerURL:
+    Description: "Wisdom Constructs Lambda Function URL"
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/lambda/home?region=${AWS::Region}#/functions/${ConnectWisdomIntegration}"
+
+  ConnectWisdomIntegrationHandlerARN:
+    Description: "Wisdom Constructs Lambda Function ARN"
+    Value: !GetAtt ConnectWisdomIntegration.Arn
+
+  ##################################################### 
+  # Part 2: Wisdom S3 Sync - Outputs
+  ##################################################### 
+  WisdomAssetsS3Bucket:
+    Description: "Amazon S3 Bucket to store Wisdom Data Files (HTML/PDF/Word)"
+    Value: !Ref WisdomAssetsBucket
+  
+  WisdomAssetsS3BucketURL:
+    Description: "Wisdom Assets S3 Bucket URL"
+    Value: !Sub "https://s3.console.aws.amazon.com/s3/buckets/${WisdomS3BucketName}?region=${AWS::Region}"
+  
+  # Wisdom Ingestion Lambda Function
+  WisdomS3SyncHandler:
+    Description: "Wisdom S3 Sync Lambda Function Name"
+    Value: !Ref WisdomS3SyncHandler
+  
+  WisdomS3SyncHandlerURL:
+    Description: "Wisdom S3 Sync Lambda Function URL"
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/lambda/home?region=${AWS::Region}#/functions/${WisdomS3SyncHandler}"
+  
+  WisdomS3SyncHandlerARN:
+    Description: "Wisdom S3 Sync Lambda Function ARN"
+    Value: !GetAtt WisdomS3SyncHandler.Arn
+
+Resources:
+##################################################### 
+# Part 1: Wisdom Integration Component
+# Wisdom CloudFormation Resources Reference: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/AWS_Wisdom.html
+# Required Parameters:
+# - AmazonConnectInstanceARN (from Parameters)
+#####################################################
+  # Wisdom Assistant - Outputs: !GetAtt AssistantArn, AssistantId
+  WisdomAssistant:
+    Type: AWS::Wisdom::Assistant
+    Properties: 
+      Name: !Sub 
+        - 'Wisdom-Assistant-${UUID}'
+        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      Type: "AGENT"
+      Description: Amazon Connect Wisdom Assistant created by Wisdom S3 Sync
+      Tags: 
+        - Key: "UUID"
+          Value: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      
+  # Wisdom Knowledgebase - Output: !GetAtt KnowledgeBaseArn, KnowledgeBaseId
+  WisdomKnowledgeBase:
+    Type: AWS::Wisdom::KnowledgeBase
+    Properties: 
+      Name: !Sub 
+        - 'Wisdom-KnowledgeBase-${UUID}'
+        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      KnowledgeBaseType: "CUSTOM"
+      Description: Amazon Connect Wisdom Knowledge Base created by Wisdom S3 Sync
+      Tags: 
+        - Key: "UUID"
+          Value: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+
+  # Wisdom Assistant Association between Assistant and KnowledgeBase - Outputs: !GetAtt - AssistantArn, AssistantAssociationArn, AssistantAssociationId
+  WisdomAssistantAssociation:
+    Type: AWS::Wisdom::AssistantAssociation
+    Properties: 
+      AssistantId: !GetAtt WisdomAssistant.AssistantId
+      Association: 
+        KnowledgeBaseId: !GetAtt WisdomKnowledgeBase.KnowledgeBaseId
+      AssociationType: "KNOWLEDGE_BASE"
+      Tags: 
+        - Key: "UUID"
+          Value: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+  
+  ##################################################### 
+  # Custom Resource: Integrate Amazon Connect Wisdom Assistant and Knowledgebase with Amazon Connect (Custom Resource)
+  # Required Parameters:
+  # - AmazonConnectInstanceARN (Parameters)
+  # - WisdomAssistantARN (Resources)
+  # - WisdomKnowledgeBaseARN (Resources)
+  ##################################################### 
+  ConnectWisdomIntegrationRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      RoleName: !Sub
+        - 'ConnectWisdomIntegrationRole-${UUID}'
+        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: Connect_Wisdom_Integration_Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # IAM Policy to allow Lambda to update Service Linked Roles
+              - Effect: Allow
+                Action:
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                Resource:
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/connect.amazonaws.com/*'
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/wisdom.amazonaws.com/*'
+              - Effect: Allow
+                Action:
+                  - connect:DescribeInstance
+                  - connect:CreateIntegrationAssociation
+                  - connect:ListIntegrationAssociations
+                  - connect:DeleteIntegrationAssociation
+                  - connect:ListTagsForResource
+                  - connect:TagResource
+                  - connect:UntagResource
+                Resource:
+                  - !Sub '${AmazonConnectInstanceARN}'
+                  - !Sub '${AmazonConnectInstanceARN}/integration-association/*'
+              - Effect: Allow
+                Action:
+                  - wisdom:ListAssistantAssociations
+                  - wisdom:GetAssistant
+                  - wisdom:GetKnowledgeBase
+                  - wisdom:CreateAssistantAssociation
+                  - wisdom:DeleteAssistant
+                  - wisdom:DeleteKnowledgeBase
+                  - wisdom:DeleteAssistantAssociation
+                Resource:
+                  - !Sub 'arn:aws:wisdom:${AWS::Region}:${AWS::AccountId}:assistant/*'
+                  - !Sub 'arn:aws:wisdom:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+                  - !Sub 'arn:aws:wisdom:${AWS::Region}:${AWS::AccountId}:association/*/*' 
+              - Effect: Allow
+                Action:
+                  - ds:DescribeDirectories # Required for connect:DescribeInstance, connect:ListIntegrationAssociations
+                  - wisdom:ListAssistants
+                  - wisdom:ListKnowledgeBases
+                  - wisdom:CreateAssistant
+                  - wisdom:CreateKnowledgeBase
+                  - wisdom:ListTagsForResource
+                  - wisdom:TagResource
+                  - wisdom:UntagResource
+                Resource:
+                  - "*" # required for these APIs, as they have to take effect on all resources.   
+  
+  #####################################################
+  # AWS CloudFormation Custom Resource - Invoke Connect Wisdom Integration Handler
+  #####################################################
+  InvokeConnectWisdomIntegration:
+    Type: "Custom::InvokeConnectWisdomIntegration"
+    Properties:
+      ServiceToken: !GetAtt ConnectWisdomIntegration.Arn
+      INSTANCE_ARN: !Ref AmazonConnectInstanceARN
+      WISDOM_ASSISTANT_ARN: !GetAtt WisdomAssistant.AssistantArn
+      WISDOM_KNOWLEDGE_BASE_ARN: !GetAtt WisdomKnowledgeBase.KnowledgeBaseArn
+      
+  #####################################################
+  # AWS Lambda: Amazon Connect - Wisdom Integration Handler
+  #####################################################
+  ConnectWisdomIntegration:
+    Type: 'AWS::Lambda::Function'
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: 'ConnectWisdomIntegration: Establishes Amazon Connect Integration Associations with Wisdom Resources'
+      FunctionName: !Sub
+        - 'ConnectWisdomIntegration-${UUID}'
+        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      Runtime: python3.11
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: "Auto"
+      Handler: index.lambda_handler # use index.lambda_handler for inline functions
+      Role: !GetAtt ConnectWisdomIntegrationRole.Arn
+      MemorySize: 256
+      Timeout: 60
+      Environment:
+        Variables:
+          STACK_UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      Code:
+        ZipFile: |
+          # © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.
+          # This AWS Content is provided subject to the terms of the AWS Customer Agreement available at
+          # http://aws.amazon.com/agreement or other written agreement between Customer and either
+          # Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
+          # Version Info: 2023.09.21
+          # Description: 
+          # This AWS Lambda Function will:
+          # 1. Check for Existing Amazon Connect Integration Associations - Wisdom.
+          # **NOTE**: If the Connect Instance has an existing Integration Association, the Integration Association will be deleted and replaced with the new Integration Association.
+          # 2. Create an Amazon Connect Integration Association with an Amazon Connect Wisdom (Assistant and KnowledgeBase).
+
+          # Python License: https://docs.python.org/3/license.html
+          import os
+          import json
+
+          # CloudFormation Response only available if deployed inline.
+          # import cfnresponse # Apache License: https://pypi.org/project/cfnresponse/
+          import urllib3 # MIT License: https://pypi.org/project/urllib3/
+          http = urllib3.PoolManager()
+          SUCCESS = "SUCCESS"
+          FAILED = "FAILED"
+
+          # AWS SDK Imports
+          import boto3
+          from botocore.exceptions import ClientError
+
+          CONNECT_CLIENT = boto3.client('connect')
+          WISDOM_CLIENT = boto3.client('wisdom')
+
+          # Define Environment Variables
+          STACK_UUID = os.environ["STACK_UUID"] # Substring of CloudFormation StackID. Used to identify and tag resources
+
+          # Description: IF THE CONNECT INSTANCE HAS AN EXISTING INTEGRATION, REMOVE the INTEGRATION ASSOCIATION, REPLACE WITH NEW.
+          def lambda_handler(event, context):
+              print("Event Recieved: ", json.dumps(event))
+              print("Request Type:", event['RequestType'])
+              print("Resource Properties: ", json.dumps(event["ResourceProperties"]))
+
+              # Define variables from Custom Resource Event Data
+              PHYSICAL_RESOURCE_ID = event["ResourceProperties"]["ServiceToken"]
+              # STACK_UUID = event["ResourceProperties"]["STACK_UUID"] # Substring of CloudFormation StackID. Used to identify and tag resources"
+              INSTANCE_ARN = event["ResourceProperties"]["INSTANCE_ARN"] # To get InstanceId: INSTANCE_ARN.split("/")[1]
+              WISDOM_ASSISTANT_ARN = event["ResourceProperties"]["WISDOM_ASSISTANT_ARN"] 
+              WISDOM_KNOWLEDGE_BASE_ARN = event["ResourceProperties"]["WISDOM_KNOWLEDGE_BASE_ARN"]
+
+              # Check for existing Integrations: List Integration Association - Wisdom Assistant / Knowledge Base
+              # Full Assistant/KnowledgeBase Integration Association Object: [{'IntegrationAssociationId': 'string', 'IntegrationAssociationArn': 'string', 'InstanceId': 'string', 'IntegrationType': 'WISDOM_ASSISTANT', 'IntegrationArn': 'string'}]
+              connectWisdomAssistantIntegration = listIntegrationAssociations(instanceId=INSTANCE_ARN, integrationType="WISDOM_ASSISTANT")
+              connectWisdomKnowledgeBaseIntegration = listIntegrationAssociations(instanceId=INSTANCE_ARN, integrationType="WISDOM_KNOWLEDGE_BASE")
+              print("Connect Integration - Wisdom Assistant ", json.dumps(connectWisdomAssistantIntegration))    
+              print("Connect Integration - Wisdom Knowledgebase ", json.dumps(connectWisdomKnowledgeBaseIntegration))
+
+              # Define shared ResponseData Expected by CloudFormation Response:
+              responseData = {
+                  "Connect_WisdomAssistant_IntegrationAssociationARN": "", # Connect Integration Association - Wisdom Assistant
+                  "Connect_WisdomKnowledgeBase_IntegrationAssociationARN": "", # Connect Integration Association - Wisdom KnowledgeBase
+                  "Wisdom_Assistant_ARN": "", # Amazon Connect Integration Association - Wisdom Assistant
+                  "Wisdom_KnowledgeBase_ARN": "", # Amazon Connect Integration Association - Wisdom KnowledgeBase
+              }
+
+              # Case 1: CloudFormation Stack sends Create or Update Event.
+              if event["RequestType"] == "Create" or event["RequestType"] == "Update":
+                  # Case 1: If the Connect Instance has existing Wisdom Integrations (both Assistant and KnowledgeBase) return those values.
+                  if len(connectWisdomAssistantIntegration) and len(connectWisdomKnowledgeBaseIntegration):
+                      # Roadmap: Delete Existing Integration Associations, create new Integration Associations with resources.
+                      print("Connect Instance: ", INSTANCE_ARN, " has existing Wisdom integrations.")
+
+                      # Return previous Integration Association Data
+                      responseData["Previous_Connect_WisdomAssistant_IntegrationAssociation"] = str(connectWisdomAssistantIntegration[0])
+                      responseData["Previous_Wisdom_Assistant_ARN"] = str(connectWisdomAssistantIntegration[0]['IntegrationArn'])
+                      responseData["Previous_Connect_WisdomKnowledgeBase_IntegrationAssociation"] = str(connectWisdomKnowledgeBaseIntegration[0])
+                      responseData["Previous_Wisdom_KnowledgeBase_ARN"] = str(connectWisdomKnowledgeBaseIntegration[0]['IntegrationArn'])
+                  
+                      deleteConnectWisdomAssistantIntegration = deleteIntegrationAssociation(instanceId=INSTANCE_ARN, integrationAssociationId=connectWisdomAssistantIntegration[0]['IntegrationAssociationId'])
+                      print("Delete Complete: Amazon Connect Integration Association - Wisdom Assistant: ", connectWisdomAssistantIntegration[0]['IntegrationAssociationId'])
+
+                      deleteConnectWisdomKnowledgeBaseIntegration = deleteIntegrationAssociation(instanceId=INSTANCE_ARN, integrationAssociationId=connectWisdomKnowledgeBaseIntegration[0]['IntegrationAssociationId'])
+                      print("Delete Complete: Amazon Connect Integration Association - Wisdom KnowledgeBase: ", connectWisdomKnowledgeBaseIntegration[0]['IntegrationAssociationId'])
+                  else:
+                      print("Connect Instance: ", INSTANCE_ARN, " has no existing Wisdom integrations.")
+                  
+                  # Step 2: Create new Integration Associations with provided Wisdom Assistant and Knowledge Base
+                  # At this point, Connect Instance has no existing Wisdom Integrations.
+                  if len(WISDOM_ASSISTANT_ARN) > 0:
+                      connectWisdomAssistantIntegration = createIntegrationAssociation(INSTANCE_ARN, WISDOM_ASSISTANT_ARN, 'WISDOM_ASSISTANT')
+                      print("Connect Integration - Wisdom Assistant. Create Integration Association Response: ", connectWisdomAssistantIntegration)
+                      if connectWisdomAssistantIntegration['status'] == "SUCCESS":
+                          responseData["Connect_WisdomAssistant_IntegrationAssociationARN"] = connectWisdomAssistantIntegration['IntegrationAssociationArn']
+                          responseData["Wisdom_Assistant_ARN"] = WISDOM_ASSISTANT_ARN
+                  else:
+                      print("Wisdom Assistant ARN not provided. Skipping Integration Association Creation.")
+
+                  if len(WISDOM_KNOWLEDGE_BASE_ARN) > 0:
+                      connectWisdomKnowledgeBaseIntegration = createIntegrationAssociation(INSTANCE_ARN, WISDOM_KNOWLEDGE_BASE_ARN, 'WISDOM_KNOWLEDGE_BASE')
+                      print("Connect Integration - Wisdom KnowledgeBase. Create Integration Association Response: ", connectWisdomKnowledgeBaseIntegration)
+                      if connectWisdomKnowledgeBaseIntegration['status'] == "SUCCESS":
+                          responseData["Connect_WisdomKnowledgeBase_IntegrationAssociationARN"] = connectWisdomKnowledgeBaseIntegration['IntegrationAssociationArn']
+                          responseData["Wisdom_KnowledgeBase_ARN"] = WISDOM_KNOWLEDGE_BASE_ARN
+                  else:
+                      print("Wisdom KnowledgeBase ARN not provided. Skipping Integration Association Creation.")
+
+                  # Send CFN Response
+                  print("Create/Update - Wisdom Integration Handler Response: ", json.dumps(responseData))
+                  send(event, context, "SUCCESS", responseData, PHYSICAL_RESOURCE_ID)
+                  return responseData
+              
+              # CloudFormation Stack sends DELETE signal - Delete Connect Integration Associations.
+              # DELETE - ORDER OF OPERATIONS: 1) Connect-Assistant Integration, 2) Connect-Knowledgebase Integration, 3) Wisdom Assistant-Knowledgebase Association, 4) Wisdom Assistant, 5) Wisdom Knowledgebase
+              if event["RequestType"] == "Delete":
+                  # Case 1: If the Connect Instance has Wisdom Integration Associations (WISDOM_ASSISTANT, WISDOM_KNOWLEDGE_BASE), delete resources.
+                  if len(connectWisdomAssistantIntegration):
+                      response = deleteIntegrationAssociation(INSTANCE_ARN, connectWisdomAssistantIntegration[0]["IntegrationAssociationId"])
+                      print("Connect Integration - Wisdom Assistant. Delete Integration Association Response: ", str(response))
+
+                  if len(connectWisdomKnowledgeBaseIntegration):
+                      response = deleteIntegrationAssociation(INSTANCE_ARN, connectWisdomKnowledgeBaseIntegration[0]["IntegrationAssociationId"])
+                      print("Connect Integration - Wisdom KnowledgeBase. Delete Integration Association Response: ", str(response))
+                  
+                  # Send CFN Response
+                  print("Delete - Wisdom Integration Handler Response: ", json.dumps(responseData))
+                  send(event, context, "SUCCESS", responseData, PHYSICAL_RESOURCE_ID)
+                  return responseData
+
+          # List Amazon Connect Instance Integration Associations (Accepts either Instance ID or ARN)
+          # https://docs.aws.amazon.com/connect/latest/APIReference/API_ListIntegrationAssociations.html
+          def listIntegrationAssociations(instanceId, integrationType):
+              CONNECT_CLIENT = boto3.client('connect')
+              try:
+                  response = CONNECT_CLIENT.list_integration_associations(
+                      InstanceId=instanceId,
+                      IntegrationType=integrationType
+                  )
+                  return response["IntegrationAssociationSummaryList"]
+              except ClientError as e:
+                  print(e)
+                  return {'status': "CLIENT_ERROR", 'Message': str(e)}
+              except Exception as ex:
+                  print(ex)
+                  return {'status': "EXCEPTION", 'Message': str(ex)}
+
+          # Integrates a WISDOM_KNOWLEDGE_BASE or WISDOM_ASSISTANT with an Amazon Connect Instance
+          # https://docs.aws.amazon.com/connect/latest/APIReference/API_CreateIntegrationAssociation.html
+          def createIntegrationAssociation(instanceId, integrationArn, integrationType):
+              print("Creating Integration Association between Connect Instance: ", instanceId, " and the Wisdom Resource: ", integrationArn, " with Integration Type: ", integrationType, " and UUID Tag: ", STACK_UUID)
+              try:
+                  response = CONNECT_CLIENT.create_integration_association(
+                      InstanceId = instanceId,
+                      IntegrationArn = integrationArn,
+                      IntegrationType = integrationType,
+                      Tags={ "UUID": STACK_UUID }
+                  )
+                  response["status"] = "SUCCESS"
+                  return response
+              except ClientError as e:
+                  return {'status': "CLIENT_ERROR", 'Message': str(e)}
+              except Exception as ex:
+                  return {'status': "EXCEPTION", 'Message': str(ex)}
+
+          # Delete a Connect - Wisdom Integration Association (Assistant or KnowledgeBase)
+          # https://docs.aws.amazon.com/connect/latest/APIReference/API_DeleteIntegrationAssociation.html
+          def deleteIntegrationAssociation(instanceId, integrationAssociationId):
+              print("Deleting Integration Association between Connect Instance: ", instanceId, " and the Wisdom Resource: ", integrationAssociationId)
+              try:
+                  response = CONNECT_CLIENT.delete_integration_association(InstanceId=instanceId, IntegrationAssociationId=integrationAssociationId)
+                  return {'status': "SUCCESS", 'Message': str("Integration Association, " + integrationAssociationId + ", deleted successfully")}
+              except ClientError as e:
+                  return {'status': "CLIENT_ERROR", 'Message': str(e)}
+              except Exception as ex:
+                  return {'status': "EXCEPTION", 'Message': str(ex)}
+
+          # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+          # SPDX-License-Identifier: MIT-0
+          # CloudFormation Response Helper Function: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-lambda-function-code-cfnresponsemodule.html
+          def send(event, context, responseStatus, responseData, physicalResourceId=None, noEcho=False, reason=None):
+              responseUrl = event['ResponseURL']
+              print(responseUrl)
+              
+              responseBody = {
+                  'Status' : responseStatus,
+                  'Reason' : reason or "See the details in CloudWatch Log Stream: {}".format(context.log_stream_name),
+                  'PhysicalResourceId' : physicalResourceId or context.log_stream_name,
+                  'StackId' : event['StackId'],
+                  'RequestId' : event['RequestId'],
+                  'LogicalResourceId' : event['LogicalResourceId'],
+                  'NoEcho' : noEcho,
+                  'Data' : responseData
+              }
+              json_responseBody = json.dumps(responseBody)
+              print("Response body: ", json_responseBody)
+
+              headers = {
+                  'content-type' : '',
+                  'content-length' : str(len(json_responseBody))
+              }
+
+              try:
+                  response = http.request('PUT', responseUrl, headers=headers, body=json_responseBody)
+                  print("Status code:", response.status)
+              except Exception as e:
+                  print("send(..) failed executing http.request(..):", e)
+
+##################################################### 
+# Part 2: Wisdom Ingestion Component
+# Required Parameters:
+# - WisdomS3BucketName (Parameters)
+# - KnowledgeBaseARN (Resources) 
+#####################################################
+  #####################################################
+  # Amazon SQS Queue: Queue Amazon S3 Object Events, used to avoid Wisdom API request throttling
+  #####################################################
+  WisdomS3EventQueue:
+    Type: "AWS::SQS::Queue"
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      QueueName: !Sub
+        - 'WisdomSQSQueue-${UUID}'
+        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      DelaySeconds: 0
+      VisibilityTimeout: 30
+      MessageRetentionPeriod: 300
+  
+  # Queue Policy: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-sqs-policy.html
+  WisdomS3EventQueuePolicy:
+    Type: "AWS::SQS::QueuePolicy"
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Id: QueuePolicy
+        Statement:
+          - Sid: Allow-SendMessage-To-Queue-From-S3-Event-Notification
+            Effect: Allow
+            Principal: 
+              Service: "s3.amazonaws.com"
+            Action:
+              - "sqs:SendMessage"
+              - "sqs:RecieveMessage"
+            Resource: !GetAtt WisdomS3EventQueue.Arn
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:s3:::${WisdomS3BucketName}' #Need Parameter: WisdomS3BucketName for this point here.
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Queues: # Requires Queue URL, which is returned on !Ref. https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html
+        - !Ref WisdomS3EventQueue 
+  
+  #####################################################
+  # IAM Role for Cloudformation to access S3.
+  # Also Required if Nested Stacks are being used, needs to access outside resources.
+  #####################################################
+  WisdomS3BucketRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub
+        - 'WisdomS3BucketRole-${UUID}'
+        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+                Service: s3.amazonaws.com
+            Action:
+                - 'sts:AssumeRole' 
+  
+  #####################################################
+  # AWS S3 Bucket
+  # - Store HTML assets to be loaded into Wisdom
+  # - Create S3 Event Notifications to be published into SQS Queue
+  #####################################################
+  WisdomAssetsBucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref WisdomS3BucketName
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      PublicAccessBlockConfiguration: # Review
+        BlockPublicAcls: True
+        IgnorePublicAcls: True
+        BlockPublicPolicy: True
+        RestrictPublicBuckets: True 
+      # S3 Bucket Versioning required for Wisdom UpdateContent to function correctly.
+      VersioningConfiguration: 
+        Status: Enabled
+      NotificationConfiguration:
+        QueueConfigurations:
+        # Using S3 Key Filters to isolate file types, avoid errors. NOTE: Cannot specify more than one suffix rule in a filter. [Have to define separate rules]
+        # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket-notificationconfiguration-config-filter-s3key.html
+        # https://docs.aws.amazon.com/AmazonS3/latest/userguide//notification-how-to-filtering.html
+          - Event: "s3:ObjectCreated:*"
+            Queue: !GetAtt WisdomS3EventQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: '.html'
+          - Event: "s3:ObjectCreated:*"
+            Queue: !GetAtt WisdomS3EventQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: '.pdf'
+          - Event: "s3:ObjectCreated:*"
+            Queue: !GetAtt WisdomS3EventQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: '.docx'
+          - Event: "s3:ObjectCreated:*"
+            Queue: !GetAtt WisdomS3EventQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: '.doc'
+          # S3 Object removed rules (Including PDF/Word)
+          - Event: "s3:ObjectRemoved:*"
+            Queue: !GetAtt WisdomS3EventQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: '.html'
+          - Event: "s3:ObjectRemoved:*"
+            Queue: !GetAtt WisdomS3EventQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: '.pdf'
+          - Event: "s3:ObjectRemoved:*"
+            Queue: !GetAtt WisdomS3EventQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: '.docx'
+          - Event: "s3:ObjectRemoved:*"
+            Queue: !GetAtt WisdomS3EventQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: '.doc'
+
+  #####################################################
+  # Amazon SQS - Lambda Permissions and Trigger
+  # Grant permissions to SQS to call the Lambda handler when objects are added or removed from the Wisdom S3 Bucket.
+  #####################################################
+  SQSLambdaInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt WisdomS3SyncHandler.Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: sqs.amazonaws.com
+      SourceAccount: !Ref 'AWS::AccountId'
+      SourceArn: !GetAtt WisdomS3EventQueue.Arn
+
+  # Lambda Function Trigger
+  LambdaFunctionEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 10
+      Enabled: true
+      EventSourceArn: !GetAtt WisdomS3EventQueue.Arn
+      FunctionName: !GetAtt WisdomS3SyncHandler.Arn
+
+  ####################################################################
+  # AWS Lambda Function 
+  # - Process incoming SQS Events from S3 Event Notifications
+  # - Perform CRUD actions on AC Wisdom Knowledgebase 
+  ####################################################################
+  WisdomS3SyncHandlerRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    Properties:
+      RoleName: !Sub
+        - 'WisdomS3SyncHandlerRole-${UUID}'
+        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: WisdomS3_Policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource:
+              - !Sub '${WisdomAssetsBucket.Arn}/*'
+      - PolicyName: WisdomSQS_Policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:ChangeMessageVisibility
+            Resource: !GetAtt WisdomS3EventQueue.Arn          
+      # Below are the minimum required Wisdom APIs
+      - PolicyName: WisdomS3SyncHandler_Policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+              - "wisdom:UpdateContent"
+              - "wisdom:SearchContent"
+              - "wisdom:GetContentSummary"
+              - "wisdom:ListContents"
+              - "wisdom:DeleteContent"
+              - "wisdom:StartContentUpload"
+              - "wisdom:GetContent"
+              - "wisdom:CreateContent"
+            Resource:
+              - !Sub 'arn:aws:wisdom:${AWS::Region}:${AWS::AccountId}:content/*/*'
+              - !Sub 'arn:aws:wisdom:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+          - Effect: Allow
+            Action:
+              - "wisdom:TagResource" # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonconnectwisdom.html          
+              - "wisdom:UntagResource"
+            Resource:
+              - "*" # required for these APIs, as they have to take effect on all resources.
+
+  WisdomS3SyncHandler:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: !Sub "Amazon Connect Wisdom Synchronization Handler (Bucket: ${WisdomS3BucketName})"
+      FunctionName: !Sub
+        - 'WisdomS3SyncHandler-${UUID}'
+        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      Handler: index.lambda_handler
+      Runtime: python3.11
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: "Auto"
+      Role: !GetAtt WisdomS3SyncHandlerRole.Arn
+      MemorySize: 256
+      Timeout: 30
+      Environment:
+        Variables: 
+          KNOWLEDGE_BASE_ARN: !GetAtt WisdomKnowledgeBase.KnowledgeBaseArn 
+      Code:
+        ZipFile: |
+          # © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.  
+          # This AWS Content is provided subject to the terms of the AWS Customer Agreement available at  
+          # http://aws.amazon.com/agreement or other written agreement between Customer and either
+          # Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
+          # Version Info: 2023.10.04.prod
+          # Notes: This AWS Lambda function will handle the synchronization of Amazon S3 files with Amazon Connect Wisdom
+
+          # Python Imports
+          import os
+          import json
+          import urllib3
+          from urllib.parse import unquote_plus
+          http = urllib3.PoolManager()
+
+          # AWS SDK Imports
+          import boto3
+          from botocore.exceptions import ClientError
+
+          AWS_REGION = os.environ["AWS_REGION"] if os.environ["AWS_REGION"] else "us-east-1"
+          CONNECT_CLIENT = boto3.client("connect", region_name=AWS_REGION)
+          WISDOM_CLIENT = boto3.client("wisdom", region_name=AWS_REGION)
+          S3_CLIENT = boto3.client('s3', region_name=AWS_REGION)
+
+          # AWS Lambda Environment Variables
+          KNOWLEDGE_BASE_ARN = os.getenv('KNOWLEDGE_BASE_ARN')
+          KNOWLEDGE_BASE_ID = KNOWLEDGE_BASE_ARN.split('/')[-1]
+
+          # Main function to handle Amazon SQS requests
+          # This function will be called when the Lambda function is triggered by an SQS event.
+          def lambda_handler(event, context):
+              # Initially, event is a dictionary. Use json.dumps(x) to convert JSON -> String. Use json.loads(x) to convert String -> JSON
+              print("Event Recieved (String): ", json.dumps(event))
+              print("KnowledgeBase ARN: ", KNOWLEDGE_BASE_ARN)
+
+              # Parse the SQS Event Body. (Initially, sqsEventBody is a string, needs json.loads() to convert to dictionary)
+              sqsEventBody = event["Records"][0]["body"] # print("SQS Event Body (String): ", sqsEventBody)
+              sqsEventBody = json.loads(sqsEventBody) # print("SQS Event Body (Dictionary): ", sqsEventBody)
+
+              # Handle S3 Test Events
+              if "Event" in sqsEventBody:
+                  print("Amazon S3 -> SQS Event Recieved: ", sqsEventBody["Event"]) 
+                  if sqsEventBody["Event"] == "s3:TestEvent":
+                      print("S3 Test Event Recieved, no action taken")
+                      return
+                  
+              # Parse Incoming SQS Event - S3 Event Notification
+              if "Records" in sqsEventBody:
+                  s3EventBody = sqsEventBody["Records"][0]
+                  # print("S3 Event Body (Dictionary): ", s3EventBody)
+                  print("S3 Event Body (String): ", json.dumps(s3EventBody))
+                  
+                  eventName = s3EventBody["eventName"]
+                  print("Amazon S3 -> SQS Event Recieved: ", eventName)
+                  
+                  s3Data = s3EventBody["s3"]
+                  print("S3 Data: ", s3Data)
+
+                  # Step 2.1: Parse S3 Event Body
+                  bucket = s3Data["bucket"]["name"]
+                  
+                  # Preprocess S3 Key from SQS Event to handle case where spaces exist in the file name
+                  raw_key = s3Data["object"]["key"]
+                  key = unquote_plus(raw_key) 
+                  print("Original Key: ", raw_key, ", Parsed Key: ", key)
+                  version = s3Data["object"]["versionId"]
+                  print("Bucket: ", bucket, " Key: ", key, " Version: ", version)
+
+                  # Search for existing Wisdom Content with the same Key
+                  searchWisdomContentResponse = wisdomSearchContent(KNOWLEDGE_BASE_ID, key)["data"]
+                  print("Existing Wisdom Content (Wisdom SearchContent): ", json.dumps(searchWisdomContentResponse))
+
+                  # Handle S3 Bucket Object Notification Events (Create/Update/Delete)
+                  # Case 1: S3 Event Type is ObjectCreated (Create/Update)
+                  if "ObjectCreated" in eventName:
+                      print("START processing S3:ObjectCreated")
+
+                      # Get S3 Object for CREATE or UPDATE
+                      # S3 Get Object API Reference: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3/client/get_object.html#
+                      s3GetObjectResponse = s3GetObject(bucket, key) # versionId=version
+                      if len(s3GetObjectResponse) == 0:
+                          print("Object: ", key, " does not exist in Amazon S3 bucket: ", bucket, " nothing to create/update")
+                          return
+                      
+                      # If S3 Get Object Response is not None, then there is a valid object in the Amazon S3 Bucket with the provided Key.
+                      # Upload S3 Object to Wisdom KnowledgeBase using Wisdom StartContentUpload API
+                      wisdomStartContentUploadResponse = wisdomStartContentUpload(KNOWLEDGE_BASE_ID, s3GetObjectResponse)
+                      print("START - Wisdom Content Upload Response: ", json.dumps(wisdomStartContentUploadResponse))
+                      uploadId = wisdomStartContentUploadResponse["data"]
+
+                      # Case 1.1: UPDATE - If there is an existing item found in the Wisdom KnowledgeBase, update it.
+                      if len(searchWisdomContentResponse):
+                          print("UPDATE - Object: ", key, " already exists in Wisdom KnowledgeBase, updating Wisdom content")
+                          print("ExistingWisdomContent: ", searchWisdomContentResponse[0])
+                          updateContentResponse = wisdomUpdateContent(knowledgeBaseId=KNOWLEDGE_BASE_ID, uploadId=uploadId, bucketName=bucket, objectKey=key, rawObjectKey=raw_key, existingWisdomContent=searchWisdomContentResponse)
+                          responseData = json.dumps(updateContentResponse, sort_keys=True, default=str)
+                          
+                          # Return Response Data
+                          print("SUCCESS - Wisdom UpdateContent Response: ", responseData)
+                          return {"status": "SUCCESS", "data": responseData}
+                      # CASE 1.2: CREATE - If there is no existing Wisdom Content for the S3 Object, create new Wisdom Content
+                      else:
+                          print("CREATE - Object: ", key, " does not exist in KnowledgeBase, creating Wisdom content")
+                          createContentResponse = wisdomCreateContent(knowledgeBaseId=KNOWLEDGE_BASE_ID, uploadId=uploadId, bucketName=bucket, objectKey=key, rawObjectKey=raw_key)
+                          responseData = json.dumps(createContentResponse, sort_keys=True, default=str)
+                          
+                          # Return Response Data
+                          print("SUCCESS - Wisdom CreateContent Response: ", responseData)
+                          return {"status": "SUCCESS", "data": responseData}
+
+                  # Case 2: S3 Event Type is ObjectRemoved (Delete)
+                  elif "ObjectRemoved" in eventName:
+                      print("START processing S3:ObjectRemoved")
+                      # Case 2.1: On DELETE - IF Object does exist in KnowledgeBase, process deletion
+                      if len(searchWisdomContentResponse):
+                          print("DELETE - Object: ", key, " exists in KnowledgeBase, deleting Wisdom content.")
+                          print("START DeleteContent: ", searchWisdomContentResponse[0], " from KnowledgeBase: ", KNOWLEDGE_BASE_ID)
+                          try:
+                              WISDOM_CLIENT.delete_content(
+                                  knowledgeBaseId = KNOWLEDGE_BASE_ID,
+                                  contentId = searchWisdomContentResponse[0]["contentId"],
+                              )
+                              print("SUCCESS - Wisdom DeleteContent Response: ", json.dumps(searchWisdomContentResponse[0]["title"]))
+                              return {"status": "SUCCESS", "data": "Wisdom Content Successfully Deleted"}
+                          except ClientError as e:
+                              print("Client Error - Wisdom DeleteContent: ", str(e))
+                              return {"status": "CLIENT_ERROR", "data": str(e)}
+                          except Exception as ex:
+                              print("Exception - Wisdom DeleteContent: ", str(ex))
+                              return {"status": "EXCEPTION", "data": str(ex)}
+
+                      # Case 2.2: On DELETE - IF Object does NOT exist in KnowledgeBase, return None
+                      else:
+                          print("DELETE - Object: ", key, " does not exist in KnowledgeBase, nothing to delete")
+                          return
+                  # Case 3: Unsupported S3 Event Type
+                  else:
+                      print("Event not supported: ", eventName)
+                      return
+
+          # Search Amazon Connect Wisdom Knowledge Base for Content (Accepts either Instance ID or ARN)
+          # Reference: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/wisdom/client/search_content.html#
+          # CLI Example: aws wisdom search-content --knowledge-base-id arn:aws:wisdom:REGION:ACCOUNTID:knowledge-base/KNOWLEDGEBASEID --search-expression "{"filters": [{"field": "NAME", "operator": "EQUALS","value": "sample/password-reset.html"}]}
+          def wisdomSearchContent(knowledgeBaseId, key):
+              try:
+                  search = WISDOM_CLIENT.search_content(
+                      knowledgeBaseId = knowledgeBaseId,
+                      maxResults = 100,
+                      searchExpression={
+                          "filters": [{
+                              "field": "NAME",
+                              "operator": "EQUALS",
+                              "value": key
+                          }]
+                      }
+                  )
+                  print("SUCCESS - Wisdom SearchContent - Key: ", key, " Results: ", search)
+                  return {"status": "SUCCESS", "data": search["contentSummaries"]}
+              except ClientError as e:
+                  print("Client Error - Wisdom SearchContent: ", str(e))
+                  return {"status": "CLIENT_ERROR", "data": str(e)}
+              except Exception as ex:
+                  print("Exception - Wisdom SearchContent: ", str(ex))
+                  return {"status": "EXCEPTION", "data": str(ex)}
+
+          # Amazon S3 Get Object: If Object Exists, return S3 Object. Else, return None.
+          # Reference: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Client.get_object    
+          def s3GetObject(bucketName, objectKey):
+              try:
+                  s3Object = S3_CLIENT.get_object(Bucket=bucketName, Key=objectKey)
+                  print("S3 Object: ", s3Object)
+                  return s3Object
+              except ClientError as e:
+                  print("Client Error: ", str(e))
+                  return {"status": "CLIENT_ERROR", "data": str(e)}
+              except Exception as ex:
+                  print("Error: ", str(ex))
+                  return {"status": "EXCEPTION", "data": str(ex)}
+
+          # Wisdom StartContentUpload: Initiate Wisdom Content Upload of S3 Object, returns uploadId
+          # Reference: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/wisdom/client/start_content_upload.html
+          def wisdomStartContentUpload(knowledgeBaseId, s3Object):
+              print("Wisdom StartContentUpload S3 Object")
+              print("S3 Object: ", s3Object)
+              print("Content Type: ", s3Object["ContentType"])
+              print("Knowledge Base ID/ARN: ", knowledgeBaseId)
+
+              try:
+                  response = WISDOM_CLIENT.start_content_upload(
+                      contentType = s3Object["ContentType"],
+                      knowledgeBaseId = knowledgeBaseId
+                  )
+                  print("Wisdom StartContentUpload Response: ", response)
+                  print("Upload ID: ", response["uploadId"])
+                  print("Upload Details: ", response)
+
+                  # Make an HTTP Request to put Object Body to Content Upload URL
+                  s3StreamingBody = s3Object['Body']
+                  streamingBodyRead = s3StreamingBody.read()
+                  httpResponse = http.request('PUT', response["url"], headers=response["headersToInclude"], body=streamingBodyRead)
+                  
+                  # Return Response Data
+                  print("Wisdom StartContentUpload Response: ", response)
+                  return {"status": "SUCCESS", "data": response["uploadId"]}
+              except ClientError as e:
+                  print("Wisdom StartContentUpload Client Error: ", str(e))
+                  return {"status": "CLIENT_ERROR", "data": str(e)}
+              except Exception as ex:
+                  print("Wisdom StartContentUpload Exception: ", str(ex))
+                  return {"status": "EXCEPTION", "data": str(ex)}
+
+          # Amazon Connect Wisdom Create Knowledge Base Content
+          # Reference: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/wisdom/client/create_content.html
+          # rawKey is the raw generated Amazon S3 Key (before parsing). This is necessary for LinkOutUri to work properly.
+          def wisdomCreateContent(knowledgeBaseId, uploadId, bucketName, objectKey, rawObjectKey):
+              try:
+                  # Start Wisdom CreateContent
+                  response = WISDOM_CLIENT.create_content(
+                      knowledgeBaseId = knowledgeBaseId,
+                      name=objectKey, # Must be unique.
+                      # title=objectKey.split("/")[1].split(".")[0], # Optional: Title is equal to file name without extension or folder prefix.
+                      uploadId = uploadId,
+                      overrideLinkOutUri=f"https://{bucketName}.s3.amazonaws.com/{rawObjectKey}", # Set Link Out URL on Wisdom Tab
+                      metadata = {
+                          "sourceS3Bucket": bucketName,
+                          "sourceS3Key": objectKey,
+                          # "sourceS3Version": "",
+                          "rawObjectKey": rawObjectKey,
+                          "s3URL": f"https://{bucketName}.s3.amazonaws.com/{rawObjectKey}"
+                      }
+                  )
+                  # Note: Since "response[content]" contains datetime object, cannot cast it to a string using json.dumps() or str()
+                  print("SUCCESS - Wisdom CreateContent Response: ", response)
+                  print("Content ID: ", response["content"]["contentId"])
+                  return response["content"]
+              except ClientError as e:
+                  print("Client Error: ", str(e))
+                  return {"status": "CLIENT_ERROR", "data": str(e)}
+              except Exception as ex:
+                  print("Exception - Wisdom CreateContent: ", str(ex))
+                  return {"status": "EXCEPTION", "data": str(ex)}
+
+          # Amazon Connect Wisdom Update Knowledge Base Content (Accepts either Knowledgebase ID or ARN)
+          # Reference: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/wisdom/client/update_content.html
+          # rawObjectKey is the Amazon S3 Key (before parsing). This is necessary for LinkOutUri to work properly.
+          def wisdomUpdateContent(knowledgeBaseId, uploadId, bucketName, objectKey, rawObjectKey, existingWisdomContent):
+              try:
+                  # Start Wisdom UpdateContent (Unlike CreateContent, UpdateContent only has a parameter 'title', but not 'name'.)
+                  response = WISDOM_CLIENT.update_content(
+                      knowledgeBaseId = knowledgeBaseId,
+                      title=objectKey, # Set title to Object Key.
+                      contentId = existingWisdomContent[0]["contentId"],
+                      revisionId = existingWisdomContent[0]["revisionId"],
+                      uploadId = uploadId,
+                      overrideLinkOutUri=f"https://{bucketName}.s3.amazonaws.com/{rawObjectKey}", # Set Link Out URL on Wisdom Tab
+                      metadata = {
+                          "sourceS3Bucket": bucketName,
+                          "sourceS3Key": objectKey,
+                          # "sourceS3Version": "",
+                          "rawObjectKey": rawObjectKey,
+                          "s3URL": f"https://{bucketName}.s3.amazonaws.com/{rawObjectKey}"
+                      }
+                  )
+                  # Note: Since "response[content]" contains datetime object, cannot cast it to a string using json.dumps() or str()
+                  print("SUCCESS - Wisdom UpdateContent Response: ", response)
+                  return response["content"]
+              except ClientError as e:
+                  print("Client Error - Wisdom UpdateContent: ", str(e))
+                  return str(e)
+              except Exception as ex:
+                  print("Exception - Wisdom UpdateContent: ", str(ex))
+                  return str(ex)
+
+          # Amazon Connect Wisdom Delete Knowledge Base Content (Accepts either Knowledgebase ID or ARN)
+          # Reference: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/wisdom/client/delete_content.html
+          def wisdomDeleteContent(knowledgeBaseId, existingWisdomContent):
+              try:
+                  WISDOM_CLIENT.delete_content(
+                      knowledgeBaseId = knowledgeBaseId,
+                      contentId = existingWisdomContent[0]["contentId"],
+                  )
+                  print("SUCCESS - Wisdom DeleteContent Response: ", json.dumps(existingWisdomContent[0]["title"]))
+                  return {"status": "SUCCESS", "data": "Wisdom Content Successfully Deleted"}
+              except ClientError as e:
+                  print("Client Error - Wisdom DeleteContent: ", str(e))
+                  return str(e)
+              except Exception as ex:
+                  print("Exception - Wisdom DeleteContent: ", str(ex))
+                  return str(ex)

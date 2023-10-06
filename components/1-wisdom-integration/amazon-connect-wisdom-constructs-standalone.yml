@@ -1,0 +1,91 @@
+# © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.  
+# This AWS Content is provided subject to the terms of the AWS Customer Agreement available at  
+# http://aws.amazon.com/agreement or other written agreement between Customer and either
+# Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
+# Version Info: 2023.09.03.beta
+# This CloudFormation Template will deploy new Amazon Connect Wisdom CloudFormation Resources (Wisdom Assistant, KnowledgeBase, and Assistant Association)
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+    Amazon Connect Wisdom - Constructs (CloudFormation). 2023.09.13
+    This CloudFormation Template will deploy new Amazon Connect Wisdom CloudFormation Resources (Wisdom Assistant, KnowledgeBase, and Assistant Association)
+
+# No Parameters Required for this template, since the resources are not yet being integrated with a Connect Instance
+# Parameters:
+
+Outputs:
+  # Section 2: Create Wisdom Resources (CloudFormation Resources)
+  # Create Wisdom Resources (CloudFormation Resources)
+  # Wisdom Assistant-Knowledgebase Association ARN
+  WisdomAssistantKnowledgebaseAssociationARN:
+    Description: "Wisdom Assistant<->Knowledgebase Association ARN"
+    Value: !GetAtt WisdomAssistantAssociation.AssistantAssociationArn
+
+  # Wisdom Assistant
+  WisdomAssistantARN:
+    Description: "Wisdom Assistant ARN"
+    Value:  !GetAtt WisdomAssistant.AssistantArn
+  
+  WisdomAssistantId:
+    Description: "Wisdom Assistant ID"
+    Value:  !GetAtt WisdomAssistant.AssistantId
+  
+  # Wisdom KnowledgeBase
+  WisdomKnowledgeBaseARN:
+    Description: "Wisdom Knowledgebase ARN"
+    Value:  !GetAtt WisdomKnowledgeBase.KnowledgeBaseArn
+
+  WisdomKnowledgeBaseId:
+    Description: "Wisdom Knowledgebase ID"
+    Value:  !GetAtt WisdomKnowledgeBase.KnowledgeBaseId
+
+Resources:
+  ##################################################### 
+  # Section 1: Create Wisdom CloudFormation Resources
+  # Docs: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/AWS_Wisdom.html
+  # Required Parameters: None
+  ##################################################### 
+
+  # 1.1 Create Wisdom Assistant
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-wisdom-assistant.html
+  # Outputs: !GetAtt AssistantArn, AssistantId
+  WisdomAssistant:
+    Type: AWS::Wisdom::Assistant
+    Properties: 
+      Name: !Sub 
+        - 'Wisdom-Assistant-${UUID}'
+        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      Type: "AGENT"
+      Description: Amazon Connect Wisdom Assistant - Created by Wisdom S3 Sync
+      Tags: 
+        - Key: "UUID"
+          Value: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      
+  # 1.2 Create Wisdom Knowledgebase
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-wisdom-knowledgebase.html
+  # Output: !GetAtt KnowledgeBaseArn, KnowledgeBaseId
+  WisdomKnowledgeBase:
+    Type: AWS::Wisdom::KnowledgeBase
+    Properties: 
+      Name: !Sub 
+        - 'Wisdom-KnowledgeBase-${UUID}'
+        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+      KnowledgeBaseType: "CUSTOM" # CUSTOM | EXTERNAL
+      Description: Amazon Connect Wisdom Knowledge Base - Created by Wisdom S3 Sync
+      Tags: 
+        - Key: "UUID"
+          Value: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+
+  # 1.3 Create Assistant Association between Assistant and Knowledgebase
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-wisdom-assistantassociation.html
+  # Outputs: !GetAtt - AssistantArn, AssistantAssociationArn, AssistantAssociationId
+  WisdomAssistantAssociation:
+    Type: AWS::Wisdom::AssistantAssociation
+    Properties: 
+      AssistantId: !GetAtt WisdomAssistant.AssistantId
+      Association: 
+        KnowledgeBaseId: !GetAtt WisdomKnowledgeBase.KnowledgeBaseId
+      AssociationType: "KNOWLEDGE_BASE"
+      Tags: 
+        - Key: "UUID"
+          Value: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
