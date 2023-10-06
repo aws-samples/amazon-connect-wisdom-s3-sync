@@ -1,14 +1,8 @@
-# © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.  
-# This AWS Content is provided subject to the terms of the AWS Customer Agreement available at  
-# http://aws.amazon.com/agreement or other written agreement between Customer and either
-# Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
-# Version Info: 2023.09.20
-# This AWS CloudFormation template will provision the resources required to deploy Amazon Connect Wisdom using Amazon S3 as a Knowledge base.  
-# This CloudFormation Template will use a Custom Resource to Establish a Connect-Wisdom Integration
-
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 AWSTemplateFormatVersion: 2010-09-09
 Description: >
-    Amazon Connect Wisdom Integration Template - With Wisdom Resources. 2023.09.20.beta
+    Amazon Connect Wisdom Integration Template
     If Wisdom is already deployed, then the CloudFormation Template will not create any resources or integrations.
     If Wisdom is not deployed, then this CloudFormation Template creates Wisdom Resources and integrate them with an Amazon Connect Instance.
 
@@ -39,7 +33,7 @@ Outputs:
     Description: "Wisdom Constructs Lambda Handler"
     Value: !GetAtt ConnectWisdomIntegration.Arn
 
-  ConnectAssistantIntegrationAssociationARN:
+  WisdomAssistantIntegrationAssociationARN:
     Description: "Amazon Connect - Wisdom Assistant - Integration Association ARN"
     Value:  !GetAtt InvokeConnectWisdomIntegration.Connect_WisdomAssistant_IntegrationAssociationARN
     
@@ -101,9 +95,7 @@ Resources:
   ##################################################### 
   # Section 2 (Custom Resource): Integrate Amazon Connect Wisdom Assistant and Knowledgebase with Amazon Connect
   # Required Parameters:
-  # - AmazonConnectInstanceARN   
-  # - WisdomAssistant (Resources)
-  # - WisdomKnowledgeBase (Resources)
+  # - AmazonConnectInstanceARN, WisdomAssistant (Resources), WisdomKnowledgeBase (Resources)
   ##################################################### 
   ConnectWisdomIntegrationRole:
     Type: AWS::IAM::Role
@@ -183,7 +175,6 @@ Resources:
     Type: "Custom::InvokeConnectWisdomIntegration"
     Properties:
       ServiceToken: !GetAtt ConnectWisdomIntegration.Arn
-      # STACK_UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
       INSTANCE_ARN: !Ref AmazonConnectInstanceARN
       WISDOM_ASSISTANT_ARN: !GetAtt WisdomAssistant.AssistantArn
       WISDOM_KNOWLEDGE_BASE_ARN: !GetAtt WisdomKnowledgeBase.KnowledgeBaseArn
@@ -198,14 +189,14 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Retain
     Properties:
-      Architectures:
-        - "arm64"
-      Runtime: python3.11
       Description: 'ConnectWisdomIntegration: Creates Connect Integration Association with Wisdom Resources'
       FunctionName: !Sub
         - 'ConnectWisdomIntegration-${UUID}'
         - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
       Handler: index.lambda_handler # use index.lambda_handler for inline functions
+      Runtime: python3.11
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: "Auto"
       Role: !GetAtt ConnectWisdomIntegrationRole.Arn
       MemorySize: 256
       Timeout: 60
@@ -214,27 +205,14 @@ Resources:
           STACK_UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
       Code:
         ZipFile: |
-          # © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.
-          # This AWS Content is provided subject to the terms of the AWS Customer Agreement available at
-          # http://aws.amazon.com/agreement or other written agreement between Customer and either
-          # Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
-          # Version Info: 2023.09.12
-          # Description: 
-          # This AWS Lambda Function will:
-          # 1. Check for Existing Amazon Connect Integration Associations - Wisdom.
-          # **NOTE**: If the Connect Instance has an existing Integration Association, the Integration Association will be deleted and replaced with the new Integration Association.
-          # 2. Create an Amazon Connect Integration Association with an Amazon Connect Wisdom (Assistant and KnowledgeBase).
+          # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+          # SPDX-License-Identifier: MIT-0
 
           # Python License: https://docs.python.org/3/license.html
           import os
           import json
-
-          # CloudFormation Response only available if deployed inline.
-          # import cfnresponse # Apache License: https://pypi.org/project/cfnresponse/
-          import urllib3 # MIT License: https://pypi.org/project/urllib3/
+          import urllib3
           http = urllib3.PoolManager()
-          SUCCESS = "SUCCESS"
-          FAILED = "FAILED"
 
           # AWS SDK Imports
           import boto3
@@ -243,10 +221,13 @@ Resources:
           CONNECT_CLIENT = boto3.client('connect')
           WISDOM_CLIENT = boto3.client('wisdom')
 
-          # Define Environment Variables
-          STACK_UUID = os.environ["STACK_UUID"] # Substring of CloudFormation StackID. Used to identify and tag resources
+          # STACK_UUID: Substring of CloudFormation StackID. Used to identify and tag resources
+          STACK_UUID = os.environ["STACK_UUID"] 
 
-          # Description: IF THE CONNECT INSTANCE HAS AN EXISTING INTEGRATION, REMOVE the INTEGRATION ASSOCIATION, REPLACE WITH NEW.
+          # This AWS Lambda Function will: 
+          # 1) Check for Existing Amazon Connect Integration Associations - Wisdom.
+          # **NOTE**: If the Connect Instance has an existing Integration Association, the Integration Association will be deleted and replaced with the new Integration Association.
+          # 2) Create an Amazon Connect Integration Association with an Amazon Connect Wisdom (Assistant and KnowledgeBase).
           def lambda_handler(event, context):
               print("Event Recieved: ", json.dumps(event))
               print("Request Type:", event['RequestType'])
@@ -254,7 +235,6 @@ Resources:
 
               # Define variables from Custom Resource Event Data
               PHYSICAL_RESOURCE_ID = event["ResourceProperties"]["ServiceToken"]
-              # STACK_UUID = event["ResourceProperties"]["STACK_UUID"] # Substring of CloudFormation StackID. Used to identify and tag resources"
               INSTANCE_ARN = event["ResourceProperties"]["INSTANCE_ARN"] # To get InstanceId: INSTANCE_ARN.split("/")[1]
               WISDOM_ASSISTANT_ARN = event["ResourceProperties"]["WISDOM_ASSISTANT_ARN"] 
               WISDOM_KNOWLEDGE_BASE_ARN = event["ResourceProperties"]["WISDOM_KNOWLEDGE_BASE_ARN"]
@@ -377,7 +357,7 @@ Resources:
           def deleteIntegrationAssociation(instanceId, integrationAssociationId):
               print("Deleting Integration Association between Connect Instance: ", instanceId, " and the Wisdom Resource: ", integrationAssociationId)
               try:
-                  response = CONNECT_CLIENT.delete_integration_association(InstanceId=instanceId, IntegrationAssociationId=integrationAssociationId)
+                  CONNECT_CLIENT.delete_integration_association(InstanceId=instanceId, IntegrationAssociationId=integrationAssociationId)
                   return {'status': "SUCCESS", 'Message': str("Integration Association, " + integrationAssociationId + ", deleted successfully")}
               except ClientError as e:
                   return {'status': "CLIENT_ERROR", 'Message': str(e)}

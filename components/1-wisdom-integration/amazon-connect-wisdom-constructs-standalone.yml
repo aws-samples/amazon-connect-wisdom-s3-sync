@@ -1,10 +1,5 @@
-# © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.  
-# This AWS Content is provided subject to the terms of the AWS Customer Agreement available at  
-# http://aws.amazon.com/agreement or other written agreement between Customer and either
-# Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
-# Version Info: 2023.09.03.beta
-# This CloudFormation Template will deploy new Amazon Connect Wisdom CloudFormation Resources (Wisdom Assistant, KnowledgeBase, and Assistant Association)
-
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 AWSTemplateFormatVersion: 2010-09-09
 Description: >
     Amazon Connect Wisdom - Constructs (CloudFormation). 2023.09.13

@@ -1,49 +1,46 @@
-# © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.  
-# This AWS Content is provided subject to the terms of the AWS Customer Agreement available at  
-# http://aws.amazon.com/agreement or other written agreement between Customer and either
-# Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
-# Version Info: 2023.09.19
-# Notes: This template will deploy the Resources required to synchronize an S3 Bucket with an existing Wisdom Knowledge Base.
-
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 AWSTemplateFormatVersion: 2010-09-09
 Description: >
-    Amazon Connect Wisdom - S3 Sync Template. Version: 2023.09.19
+    Amazon Connect Wisdom - S3 Sync Template.
     This template will deploy the Resources required to synchronize an S3 Bucket with an existing Wisdom Knowledge Base.
 
 Parameters:
-##################################################### 
-# Part 2: Wisdom Ingestion Component
-# Required Parameters:
-# - WisdomS3BucketName (from Parameters)
-# - KnowledgeBaseARN (from Part 1) 
-#####################################################
-
   WisdomS3BucketName:
     Type: String
     Description: Provide a valid, globally unique name for the S3 Bucket where you would like to store Knowledge Base content.
-    # AllowedPattern: '(?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)'
-    # ConstraintDescription: 'Invalid S3 Bucket name'
+    AllowedPattern: '(?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)'
+    ConstraintDescription: 'Invalid Amazon S3 Bucket name - https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html'
 
-  # WisdomKnowledgeBaseARN: If Existing Deployment -> ARN
-  # https://docs.aws.amazon.com/wisdom/latest/APIReference/API_KnowledgeBaseData.html
   WisdomKnowledgeBaseARN:
     Type: String
     Description: "Amazon Connect Wisdom Knowledge Base ARN (From CFN Resource)"
     AllowedPattern: "^arn:[a-z-]*?:wisdom:[a-z0-9-]*?:[0-9]{12}:[a-z-]*?/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$"
   
 Outputs:
-  # AWS Resources
+  ##################################################### 
+  # Part 2: Wisdom S3 Sync - Outputs
+  ##################################################### 
   WisdomAssetsS3Bucket:
     Description: "Amazon S3 Bucket to store Wisdom Data Files (HTML/PDF/Word)"
     Value: !Ref WisdomAssetsBucket
   
   WisdomAssetsS3BucketURL:
     Description: "Wisdom Assets S3 Bucket URL"
-    Value: !Sub "http://${WisdomS3BucketName}.s3.amazonaws.com"
+    Value: !Sub "https://s3.console.aws.amazon.com/s3/buckets/${WisdomS3BucketName}?region=${AWS::Region}"
   
-  WisdomIngestionHandler:
-    Description: "Wisdom Ingestion Lambda Handler"
-    Value: !Ref WisdomIngestionHandler
+  # Wisdom Ingestion Lambda Function
+  WisdomS3SyncHandler:
+    Description: "Wisdom S3 Sync Lambda Function Name"
+    Value: !Ref WisdomS3SyncHandler
+  
+  WisdomS3SyncHandlerURL:
+    Description: "Wisdom S3 Sync Lambda Function URL"
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/lambda/home?region=${AWS::Region}#/functions/${WisdomS3SyncHandler}"
+  
+  WisdomS3SyncHandlerARN:
+    Description: "Wisdom S3 Sync Lambda Function ARN"
+    Value: !GetAtt WisdomS3SyncHandler.Arn
 
 Resources:
   #####################################################
@@ -54,12 +51,11 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
-      # QueueName: !Sub "SQSQueue-${WisdomS3BucketName}"
       QueueName: !Sub
         - 'WisdomSQSQueue-${UUID}'
         - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
       DelaySeconds: 0
-      VisibilityTimeout: 30
+      VisibilityTimeout: 60 # Queue Timeout must be >= to Function timeout
       MessageRetentionPeriod: 300
   
   # Queue Policy: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-sqs-policy.html
@@ -87,27 +83,9 @@ Resources:
         - !Ref WisdomS3EventQueue 
 
   #####################################################
-  # IAM Role for Cloudformation to access S3.
-  # Also Required if Nested Stacks are being used, needs to access outside resources.
-  #####################################################
-  WisdomS3BucketRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      RoleName: !Sub
-        - 'WisdomS3BucketRole-${UUID}'
-        - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
-      AssumeRolePolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-                Service: s3.amazonaws.com
-            Action:
-                - 'sts:AssumeRole' 
-
-  #####################################################
   # AWS S3 Bucket
-  # - Store HTML assets to be loaded into Wisdom
-  # - Create S3 Event Notifications to be published into SQS Queue
+  # - Store knowledge content to be synchronized with the Wisdom Knowledge Base
+  # - Create S3 Object Event Notifications to be published into SQS Queue
   #####################################################
   WisdomAssetsBucket:
     Type: 'AWS::S3::Bucket'
@@ -118,7 +96,7 @@ Resources:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerPreferred
-      PublicAccessBlockConfiguration: # Review
+      PublicAccessBlockConfiguration: # Block all public access
         BlockPublicAcls: True
         IgnorePublicAcls: True
         BlockPublicPolicy: True
@@ -191,12 +169,12 @@ Resources:
 
   #####################################################
   # Amazon SQS - Lambda Permissions and Trigger
-  # Grant permissions to SQS to call the Lambda handler when objects are added or removed from the Wisdom S3 Bucket.
+  # Grant permissions to SQS to call the Lambda handler when objects are added or removed from the Amazon S3 Bucket.
   #####################################################
   SQSLambdaInvokePermission:
     Type: 'AWS::Lambda::Permission'
     Properties:
-      FunctionName: !GetAtt WisdomIngestionHandler.Arn
+      FunctionName: !GetAtt WisdomS3SyncHandler.Arn
       Action: 'lambda:InvokeFunction'
       Principal: sqs.amazonaws.com
       SourceAccount: !Ref 'AWS::AccountId'
@@ -209,19 +187,19 @@ Resources:
       BatchSize: 10
       Enabled: true
       EventSourceArn: !GetAtt WisdomS3EventQueue.Arn
-      FunctionName: !GetAtt WisdomIngestionHandler.Arn
+      FunctionName: !GetAtt WisdomS3SyncHandler.Arn
 
   ####################################################################
   # AWS Lambda Function 
   # - Process incoming SQS Events from S3 Event Notifications
-  # - Perform CRUD actions on AC Wisdom Knowledgebase 
+  # - Perform CRUD actions on Amazon Connect Wisdom Knowledge Base 
   ####################################################################
-  WisdomIngestionHandlerRole:
+  WisdomS3SyncHandlerRole:
     Type: AWS::IAM::Role
     DeletionPolicy: Delete
     Properties:
       RoleName: !Sub
-        - 'WisdomIngestionHandlerRole-${UUID}'
+        - 'WisdomS3SyncHandlerRole-${UUID}'
         - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -262,47 +240,46 @@ Resources:
           Statement:
           - Effect: Allow
             Action:
-              - "wisdom:UpdateContent"
-              - "wisdom:SearchContent"
-              - "wisdom:GetContentSummary"
               - "wisdom:ListContents"
-              - "wisdom:DeleteContent"
-              - "wisdom:StartContentUpload"
               - "wisdom:GetContent"
+              - "wisdom:GetContentSummary"
+              - "wisdom:SearchContent"
               - "wisdom:CreateContent"
+              - "wisdom:StartContentUpload"
+              - "wisdom:UpdateContent"
+              - "wisdom:DeleteContent"
             Resource:
-              - !Sub 'arn:aws:wisdom:${AWS::Region}:${AWS::AccountId}:content/*/*'
               - !Sub 'arn:aws:wisdom:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+              - !Sub 'arn:aws:wisdom:${AWS::Region}:${AWS::AccountId}:content/*/*'
+          # Wisdom TagResource APIs require '*' permissions as they have to take effect on all resources.
           - Effect: Allow
             Action:
               - "wisdom:TagResource" # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonconnectwisdom.html          
               - "wisdom:UntagResource"
             Resource:
-              - "*" # required for these APIs, as they have to take effect on all resources.
+              - "*" 
       
-  WisdomIngestionHandler:
+  WisdomS3SyncHandler:
     Type: 'AWS::Lambda::Function'
     Properties:
-      Runtime: python3.11
-      Description: !Sub "Amazon Connect Wisdom Integestion Handler (Bucket: ${WisdomS3BucketName})"
+      Description: !Sub "Amazon Connect Wisdom Synchronization Handler (Bucket: ${WisdomS3BucketName})"
       FunctionName: !Sub
-        - 'WisdomIngestionHandler-${UUID}'
+        - 'WisdomS3SyncHandler-${UUID}'
         - UUID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
-      Handler: index.lambda_handler #use index.lambda_handler for inline Python functions
-      Role: !GetAtt WisdomIngestionHandlerRole.Arn
+      Handler: index.lambda_handler
+      Runtime: python3.11
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: "Auto"
+      Role: !GetAtt WisdomS3SyncHandlerRole.Arn
       MemorySize: 256
-      Timeout: 30
+      Timeout: 60
       Environment:
         Variables: 
           KNOWLEDGE_BASE_ARN: !Ref WisdomKnowledgeBaseARN
       Code:
         ZipFile: |
-          # © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.  
-          # This AWS Content is provided subject to the terms of the AWS Customer Agreement available at  
-          # http://aws.amazon.com/agreement or other written agreement between Customer and either
-          # Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
-          # Version Info: 2023.10.04.prod
-          # Notes: This AWS Lambda function will handle the synchronization of Amazon S3 files with Amazon Connect Wisdom
+          # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+          # SPDX-License-Identifier: MIT-0
 
           # Python Imports
           import os
@@ -315,7 +292,7 @@ Resources:
           import boto3
           from botocore.exceptions import ClientError
 
-          AWS_REGION = os.environ["AWS_REGION"] if os.environ["AWS_REGION"] else "us-east-1"
+          AWS_REGION = os.environ["AWS_REGION"]
           CONNECT_CLIENT = boto3.client("connect", region_name=AWS_REGION)
           WISDOM_CLIENT = boto3.client("wisdom", region_name=AWS_REGION)
           S3_CLIENT = boto3.client('s3', region_name=AWS_REGION)
@@ -324,8 +301,8 @@ Resources:
           KNOWLEDGE_BASE_ARN = os.getenv('KNOWLEDGE_BASE_ARN')
           KNOWLEDGE_BASE_ID = KNOWLEDGE_BASE_ARN.split('/')[-1]
 
-          # Main function to handle Amazon SQS requests
-          # This function will be called when the Lambda function is triggered by an SQS event.
+          # This AWS Lambda function will handle the synchronization of Amazon S3 files with Amazon Connect Wisdom
+          # This main function triggered by an SQS event (S3 Event Notification -> SQS)
           def lambda_handler(event, context):
               # Initially, event is a dictionary. Use json.dumps(x) to convert JSON -> String. Use json.loads(x) to convert String -> JSON
               print("Event Recieved (String): ", json.dumps(event))
@@ -585,4 +562,3 @@ Resources:
               except Exception as ex:
                   print("Exception - Wisdom DeleteContent: ", str(ex))
                   return str(ex)
-

@@ -1,14 +1,10 @@
-# © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.  
-# This AWS Content is provided subject to the terms of the AWS Customer Agreement available at  
-# http://aws.amazon.com/agreement or other written agreement between Customer and either
-# Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
-# Version Info: 2023.10.04.prod
-# Notes: This AWS Lambda function will handle the synchronization of Amazon S3 files with Amazon Connect Wisdom
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 
-# Python Imports
+# Python Imports - License: https://docs.python.org/3/license.html
 import os
 import json
-import urllib3
+import urllib3 
 from urllib.parse import unquote_plus
 http = urllib3.PoolManager()
 
@@ -16,7 +12,7 @@ http = urllib3.PoolManager()
 import boto3
 from botocore.exceptions import ClientError
 
-AWS_REGION = os.environ["AWS_REGION"] if os.environ["AWS_REGION"] else "us-east-1"
+AWS_REGION = os.environ["AWS_REGION"]
 CONNECT_CLIENT = boto3.client("connect", region_name=AWS_REGION)
 WISDOM_CLIENT = boto3.client("wisdom", region_name=AWS_REGION)
 S3_CLIENT = boto3.client('s3', region_name=AWS_REGION)
@@ -25,8 +21,8 @@ S3_CLIENT = boto3.client('s3', region_name=AWS_REGION)
 KNOWLEDGE_BASE_ARN = os.getenv('KNOWLEDGE_BASE_ARN')
 KNOWLEDGE_BASE_ID = KNOWLEDGE_BASE_ARN.split('/')[-1]
 
-# Main function to handle Amazon SQS requests
-# This function will be called when the Lambda function is triggered by an SQS event.
+# This AWS Lambda function will handle the synchronization of Amazon S3 files with Amazon Connect Wisdom
+# This main function triggered by an SQS event (S3 Event Notification -> SQS)
 def lambda_handler(event, context):
     # Initially, event is a dictionary. Use json.dumps(x) to convert JSON -> String. Use json.loads(x) to convert String -> JSON
     print("Event Recieved (String): ", json.dumps(event))

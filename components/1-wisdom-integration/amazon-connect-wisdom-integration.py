@@ -1,23 +1,11 @@
-# © 2023 Amazon Web Services, Inc. or its affiliates. All Rights Reserved.
-# This AWS Content is provided subject to the terms of the AWS Customer Agreement available at
-# http://aws.amazon.com/agreement or other written agreement between Customer and either
-# Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
-# Version Info: 2023.09.25
-# This AWS Lambda Function will:
-# 1. Check for Existing Amazon Connect Integration Associations - Wisdom.
-# **NOTE**: If the Connect Instance has an existing Integration Association, the Integration Association will be deleted and replaced with the new Integration Association.
-# 2. Create an Amazon Connect Integration Association with an Amazon Connect Wisdom (Assistant and KnowledgeBase).
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 
 # Python License: https://docs.python.org/3/license.html
 import os
 import json
-
-# CloudFormation Response only available if deployed inline.
-# import cfnresponse # Apache License: https://pypi.org/project/cfnresponse/
-import urllib3 # MIT License: https://pypi.org/project/urllib3/
+import urllib3
 http = urllib3.PoolManager()
-SUCCESS = "SUCCESS"
-FAILED = "FAILED"
 
 # AWS SDK Imports
 import boto3
@@ -29,7 +17,10 @@ WISDOM_CLIENT = boto3.client('wisdom')
 # STACK_UUID: Substring of CloudFormation StackID. Used to identify and tag resources
 STACK_UUID = os.environ["STACK_UUID"] 
 
-# Description: IF THE CONNECT INSTANCE HAS AN EXISTING INTEGRATION, REMOVE the INTEGRATION ASSOCIATION, REPLACE WITH NEW.
+# This AWS Lambda Function will: 
+# 1) Check for Existing Amazon Connect Integration Associations - Wisdom.
+# **NOTE**: If the Connect Instance has an existing Integration Association, the Integration Association will be deleted and replaced with the new Integration Association.
+# 2) Create an Amazon Connect Integration Association with an Amazon Connect Wisdom (Assistant and KnowledgeBase).
 def lambda_handler(event, context):
     print("Event Recieved: ", json.dumps(event))
     print("Request Type:", event['RequestType'])
@@ -37,7 +28,6 @@ def lambda_handler(event, context):
 
     # Define variables from Custom Resource Event Data
     PHYSICAL_RESOURCE_ID = event["ResourceProperties"]["ServiceToken"]
-    # STACK_UUID = event["ResourceProperties"]["STACK_UUID"] # Substring of CloudFormation StackID. Used to identify and tag resources"
     INSTANCE_ARN = event["ResourceProperties"]["INSTANCE_ARN"] # To get InstanceId: INSTANCE_ARN.split("/")[1]
     WISDOM_ASSISTANT_ARN = event["ResourceProperties"]["WISDOM_ASSISTANT_ARN"] 
     WISDOM_KNOWLEDGE_BASE_ARN = event["ResourceProperties"]["WISDOM_KNOWLEDGE_BASE_ARN"]
