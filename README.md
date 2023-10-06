@@ -23,15 +23,15 @@
   - [Uploading Knowledge Content to Amazon S3](#uploading-knowledge-content-to-amazon-s3)
 
 ## Description
-Amazon Connect Wisdom provides [APIs](https://docs.aws.amazon.com/wisdom/latest/APIReference/Welcome.html) that enable customers to programmatically configure their knowledge base and perform knowledge management operations at scale. Amazon Connect Wisdom - S3 Sync allows contact center administrators to quickly deploy the necessary resources for a Wisdom Knowledge Base using Amazon S3 as its data store. Contact center operations managers can easily create, update, and delete knowledgebase artifacts with a basic understanding of Amazon S3 object actions. Using this solution, knowledgebase files (TXT/HTML/PDF/DOCX) stored on Amazon S3 are versioned with unique identifiers to ensure content revisions can be rolled back easily using the Amazon S3 Console.
-TODO: Fill this README out!
+[Amazon Connect Wisdom](https://aws.amazon.com/connect/wisdom/), a feature of Amazon Connect, delivers agents the information they need, reducing the time spent searching for answers. Amazon Connect Wisdom provides customers with a number of [APIs](https://docs.aws.amazon.com/wisdom/latest/APIReference/Welcome.html) to programmatically configure their knowledge base and perform knowledge management operations at scale. 
+
+**Amazon Connect Wisdom - S3 Sync** enables customers to quickly deploy all of necessary resources to create a Wisdom Knowledge Base using Amazon S3 as its data source. Contact center administrators can easily create, update, and remove knowledge content using familiar Amazon S3 object actions. Using this solution, unstructured knowledge content (TXT/HTML/PDF/DOCX) stored on Amazon S3 are versioned with unique identifiers to ensure content revisions can be rolled back easily using the Amazon S3 Console.
 
 ## Tenets
-(Unless you know better ones)
-These tenets help guide the development of the the Amazon Connect Wisdom S3 Sync:
-- **Accelerate Customer Adoption:** Reduce barriers to entry for customers onboarding to Amazon Connect Wisdom by providing a single AWS CloudFormation template.
+The following tenets guide the development of **Amazon Connect Wisdom S3 Sync**:
+- **Accelerate Customer Adoption:** Reduce friction for customers adopting Amazon Connect Wisdom; automating API calls and complex functions, all deployed with a single AWS CloudFormation template.
 - **Composable and Reusable:** Ensure the deployment artifacts are composed of unit-tested "building blocks" that can be easily understood and reused by customers.
-- **Best Practices:** Leverage software and security best practices throughout the solution, limit external dependencies, handle edge cases, and ensure least privilege access.
+- **Best Practices:** Leverage software and security best practices throughout the solution, limit external dependencies, handle failure, and ensure least privilege permissions.
 
 ## Features
 This project features a single CloudFormation template that will deploy Amazon Connect Wisdom configured with a custom knowledge base source (S3). It provisions Amazon Connect Wisdom Resources, an Amazon S3 bucket (versioned), an Amazon SQS queue, AWS Lambda functions automatically. This project will utilize resource tagging for all resources that were created by this deployment to ensure that all resources created by this deployment will be deleted cleanly.
@@ -50,7 +50,7 @@ Open Source Release
 - Wisdom Info
 - Wisdom Cleanup
 - Wisdom Sample Upload
-- Wisdom Contact FLow
+- Wisdom Realtime Contact Flow
 
 ## Authors
 [Taylan Unal](https://www.linkedin.com/in/tunal/), Connect Specialist Solutions Architect - Lead Developer/Project Owner 
@@ -72,7 +72,7 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 This library is licensed under the MIT-0 License. See the LICENSE file.
 
 ## Related Resources
-- [AWS Blog - Ingesting content to power real-time recommendations and search with Amazon Connect Wisdom](https://aws.amazon.com/blogs/contact-center/ingesting-content-to-power-real-time-recommendations-and-search-with-amazon-connect-wisdom/) - Use the AWS CLI to create Amazon Connect Wisdom Constructs, Integrations, Query an Amazon S3 KnowledgeBase
+- [AWS Blog - Ingesting content to power real-time recommendations and search with Amazon Connect Wisdom](https://aws.amazon.com/blogs/contact-center/ingesting-content-to-power-real-time-recommendations-and-search-with-amazon-connect-wisdom/) - Use the AWS CLI to create Amazon Connect Wisdom Constructs, Integrations, Query an Amazon S3 Knowledge Base
 - [Github - Amazon Connect Wisdom API Snippet (NodeJS)](https://github.com/amazon-connect/amazon-connect-snippets/tree/master/projects/WisdomAPI) - Resources to complete the Amazon Connect Wisdom API blog
 - [Amazon Connect Wisdom - Region Availability](https://docs.aws.amazon.com/connect/latest/adminguide/regions.html#wisdom_region) - AWS Regions where Amazon Connect Wisdom is available.
 - [Amazon Connect Wisdom - Service Quotas](https://docs.aws.amazon.com/connect/latest/adminguide/amazon-connect-service-limits.html#wisdom-quotas) - Service Quotas/Limits for Amazon Connect Wisdom
@@ -96,11 +96,11 @@ The following instructions will detail deploying the `amazon-connect-wisdom-s3-s
 ### Key Considerations
 #### Existing Resources Policy
 This Deployment **WILL NOT:**
-1. Delete any existing Amazon Connect Wisdom Resources (Wisdom Assistants, KnowledgeBase, Assistant Associations) that were not created by this template.
+1. Delete any existing Amazon Connect Wisdom Resources (Wisdom Assistants, Knowledge Base, Assistant Associations) that were not created by this template.
 2. Delete the Amazon S3 Bucket created by this deployment, or any of the files uploaded to it.
 
 #### AWS Resources Created by this Deployment
-- **[Amazon Connect Wisdom](https://aws.amazon.com/connect/wisdom/)** - Wisdom Assistant, Wisdom Knowledge Base, Assistant Association (Assistant-Knowledgebase)
+- **[Amazon Connect Wisdom](https://aws.amazon.com/connect/wisdom/)** - Wisdom Assistant, Wisdom Knowledge Base, Assistant Association (Assistant-Knowledge Base)
   - Verify that you are not exceeding any of your Amazon Connect Wisdom [Service Quotas](https://docs.aws.amazon.com/connect/latest/adminguide/amazon-connect-service-limits.html#wisdom-quotas)
 - **[Amazon Connect](https://aws.amazon.com/connect/)** - Amazon Connect Integration Association (WISDOM_ASSISTANT and WISDOM_KNOWLEDGE_BASE)
   - [Integration Associations](https://docs.aws.amazon.com/connect/latest/APIReference/API_CreateIntegrationAssociation.html)
@@ -109,7 +109,7 @@ This Deployment **WILL NOT:**
 - **[AWS Lambda](https://aws.amazon.com/lambda/)** - AWS Lambda functions that will (1)Integrate Wisdom Constructs with Amazon Connect and (2) Handle the synchronization of  knowledge base content between Amazon S3 and Amazon Connect Wisdom.
 
 #### AWS Resources Deleted by this Deployment
-- **ONLY** those Wisdom Resources - Wisdom Assistant, KnowledgeBase, and Assistant Association that were initially created by this deployment will be removed when the stack is deleted.
+- **ONLY** those Wisdom Resources - Wisdom Assistant, Knowledge Base, and Assistant Association that were initially created by this deployment will be removed when the stack is deleted.
 - **ONLY** Amazon Connect Integration Associations (WISDOM_ASSISTANT, WISDOM_KNOWLEDGE_BASE) created by this deployment will be removed when the stack is deleted.
 
 ### AWS CloudFormation Deployment
