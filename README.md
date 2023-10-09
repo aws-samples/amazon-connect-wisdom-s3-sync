@@ -43,14 +43,14 @@ Open Source Release
 ![Wisdom S3 Sync Diagram](images/wisdom-s3-sync-diagram.png)
 
 **Main Template (2023-10-04 Version)** [Amazon Connect Wisdom S3 Sync - Main Template](./amazon-connect-wisdom-s3-sync-template.yml)
-- Section 1 (Required): Wisdom Constructs and Integration [1-wisdom-integration](./1-wisdom-integration/)
-- Section 2 (Required): Wisdom S3 Sync [2-wisdom-s3-sync](./2-wisdom-s3-sync/)
+- Section 1 (Required): Wisdom Constructs and Integration [1-wisdom-integration](./components/1-wisdom-integration/)
+- Section 2 (Required): Wisdom S3 Sync [2-wisdom-s3-sync](./components/2-wisdom-s3-sync/)
 
 **UPCOMING Optional Templates/Components:**
 - Wisdom Info
 - Wisdom Cleanup
 - Wisdom Sample Upload
-- Wisdom Realtime Contact Flow
+- Contact Flow - Contact Lens (Realtime) + Amazon Connect Wisdom 
 
 ## Authors
 [Taylan Unal](https://www.linkedin.com/in/tunal/), Connect Specialist Solutions Architect - Lead Developer/Project Owner 
