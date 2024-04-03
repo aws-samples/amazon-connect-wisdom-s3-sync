@@ -1,4 +1,9 @@
-## Amazon Connect Wisdom S3 Sync
+## [DEPRECATED] Amazon Connect Wisdom S3 Sync
+> As of April 1st, 2024 this repository `Amazon Connect - Wisdom S3 Sync` has been **archived and is not currently supported.**
+
+> Amazon Q in Connect features a native Integration with Amazon S3. Please refer to the Amazon Connect Admin Guide: https://docs.aws.amazon.com/connect/latest/adminguide/enable-q.html to enable Amazon Q in Connect and Integrate with Amazon S3.
+
+---
 
 **Table of Contents**
 - [Amazon Connect Wisdom S3 Sync](#amazon-connect-wisdom-s3-sync)
